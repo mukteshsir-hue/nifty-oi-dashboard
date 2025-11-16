@@ -19,7 +19,7 @@ auto_refresh = st.sidebar.checkbox("Enable auto-refresh", value=True)
 if st.sidebar.button("Refresh Now"):
     st.rerun()
 
-# NSE API URL for Nifty
+# NSE API URL
 NSE_OPTION_CHAIN_API = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
 
 @st.cache_data(ttl=10)
@@ -34,30 +34,34 @@ try:
     option_chain_data = fetch_option_chain()
     records = option_chain_data["records"]["data"]
     underlying_value = option_chain_data["records"]["underlyingValue"]
+    expiry_dates = option_chain_data["records"]["expiryDates"]
+    nearest_expiry = expiry_dates[0] if expiry_dates else None
 
-    st.subheader(f"ℹ️ Nifty Spot Price: **{underlying_value}**")
+    st.subheader(f"ℹ️ Nifty Spot Price: **{underlying_value}** | Expiry: **{nearest_expiry}**")
 
-    # Filter strikes within +/- 10 steps (x50) of the spot price
-    strikes = sorted(set([record["strikePrice"] for record in records]))
-    relevant_strikes = [strike for strike in strikes if abs(strike - underlying_value) <= 500]
+    # Filter by nearest expiry only
+    filtered_records = [item for item in records if item.get("expiryDate") == nearest_expiry]
 
-    table_data = []
-    for record in records:
+    # Prepare the table data
+    table_data = {}
+    for record in filtered_records:
         strike = record["strikePrice"]
-        if strike in relevant_strikes:
-            call = record.get("CE", {})
-            put = record.get("PE", {})
+        call = record.get("CE", {})
+        put = record.get("PE", {})
 
-            table_data.append({
-                "strikePrice": strike,
-                "call_change_oi": call.get("changeinOpenInterest", 0),
-                "call_ltp": call.get("lastPrice", 0),
-                "put_change_oi": put.get("changeinOpenInterest", 0),
-                "put_ltp": put.get("lastPrice", 0),
-                "weight_diff": call.get("changeinOpenInterest", 0) - put.get("changeinOpenInterest", 0),
-            })
+        table_data[strike] = {
+            "strikePrice": strike,
+            "call_change_oi": call.get("changeinOpenInterest", 0),
+            "call_ltp": call.get("lastPrice", 0),
+            "put_change_oi": put.get("changeinOpenInterest", 0),
+            "put_ltp": put.get("lastPrice", 0),
+            "weight_diff": call.get("changeinOpenInterest", 0) - put.get("changeinOpenInterest", 0),
+        }
 
-    df = pd.DataFrame(table_data).sort_values(by="strikePrice")
+    # Limit to 10 above and below spot
+    df = pd.DataFrame(table_data.values())
+    df = df.sort_values(by="strikePrice")
+    df = df[(df["strikePrice"] >= underlying_value - 500) & (df["strikePrice"] <= underlying_value + 500)]
 
     # Summation row
     sum_row = {
@@ -66,11 +70,11 @@ try:
         "call_ltp": "",
         "put_change_oi": df["put_change_oi"].sum(),
         "put_ltp": "",
-        "weight_diff": df["call_change_oi"].sum() - df["put_change_oi"].sum(),
+        "weight_diff": df["weight_diff"].sum(),
     }
     df = df._append(sum_row, ignore_index=True)
 
-    # Styling - highlight spot price
+    # Styling
     def highlight_row(row):
         if row["strikePrice"] == underlying_value:
             return ["background-color: yellow"] * len(row)
@@ -80,11 +84,9 @@ try:
             return [""] * len(row)
 
     styled_df = df.style.apply(highlight_row, axis=1)
-
-    # Display the table
     st.dataframe(styled_df, use_container_width=True)
 
-    # Display chart if Plotly is available
+    # Graphical summary
     if PLOTLY_AVAILABLE:
         fig = go.Figure(data=[
             go.Bar(name="Call Change in OI", x=["Calls"], y=[sum_row["call_change_oi"]]),
