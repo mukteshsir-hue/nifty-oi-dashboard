@@ -67,7 +67,7 @@ def run_dashboard():
 
         st.write(f"📈 **Sum of Change in OI (Calls):** {total_ce_oi:,}")
         st.write(f"📉 **Sum of Change in OI (Puts):** {total_pe_oi:,}")
-        st.write(f⚖️ **Net Weight (CE - PE):** {diff:,}")
+        st.write(f"⚖️ **Net Weight (CE - PE):** {diff:,}")
 
         chart_data = df.melt(id_vars=["strikePrice"], var_name="Type", value_name="Change in OI")
         chart = alt.Chart(chart_data).mark_bar().encode(
