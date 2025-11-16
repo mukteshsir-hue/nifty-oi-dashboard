@@ -15,8 +15,9 @@ st.set_page_config(page_title="Nifty OI Dashboard", layout="wide")
 st.title("📊 Nifty Option Chain Open Interest Dashboard")
 refresh_interval = st.sidebar.selectbox("Auto-refresh interval (seconds)", [30, 60], index=1)
 auto_refresh = st.sidebar.checkbox("Enable auto-refresh", value=True)
+
 if st.sidebar.button("Refresh Now"):
-    st.experimental_rerun()
+    st.rerun()
 
 # NSE API URL for Nifty
 NSE_OPTION_CHAIN_API = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
@@ -37,9 +38,8 @@ try:
     st.subheader(f"ℹ️ Nifty Spot Price: **{underlying_value}**")
 
     # Filter strikes within +/- 10 steps (x50) of the spot price
-    strikes = [record["strikePrice"] for record in records]
-    unique_strikes = sorted(set(strikes))
-    relevant_strikes = [strike for strike in unique_strikes if abs(strike - underlying_value) <= 500]
+    strikes = sorted(set([record["strikePrice"] for record in records]))
+    relevant_strikes = [strike for strike in strikes if abs(strike - underlying_value) <= 500]
 
     table_data = []
     for record in records:
@@ -68,7 +68,6 @@ try:
         "put_ltp": "",
         "weight_diff": df["call_change_oi"].sum() - df["put_change_oi"].sum(),
     }
-
     df = df._append(sum_row, ignore_index=True)
 
     # Styling - highlight spot price
@@ -87,24 +86,22 @@ try:
 
     # Display chart if Plotly is available
     if PLOTLY_AVAILABLE:
-        call_sum = sum_row["call_change_oi"]
-        put_sum = sum_row["put_change_oi"]
         fig = go.Figure(data=[
-            go.Bar(name="Call Change in OI", x=["Calls"], y=[call_sum]),
-            go.Bar(name="Put Change in OI", x=["Puts"], y=[put_sum]),
+            go.Bar(name="Call Change in OI", x=["Calls"], y=[sum_row["call_change_oi"]]),
+            go.Bar(name="Put Change in OI", x=["Puts"], y=[sum_row["put_change_oi"]]),
         ])
         fig.update_layout(
             title="📈 Total Change in OI Comparison",
             xaxis_title="Side",
-            yaxis_title="Total Change in OI",
+            yaxis_title="Change in OI",
         )
         st.plotly_chart(fig)
     else:
-        st.warning("Plotly is not installed. No graphical summary shown.")
+        st.info("Plotly not installed. Graphical summary unavailable.")
 
 except Exception as e:
     st.error(f"Failed to retrieve or process data: {e}")
 
 # Auto-refresh logic
 if auto_refresh:
-    st.experimental_rerun()
+    st.rerun()
