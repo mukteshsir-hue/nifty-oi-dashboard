@@ -2,15 +2,12 @@ import streamlit as st
 import requests
 import pandas as pd
 import numpy as np
-import time
 
 # Fetch NIFTY option chain data from NSE
 @st.cache_data(ttl=30)
 def fetch_option_chain():
     url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
         response = requests.get(url, headers=headers)
         data = response.json()
@@ -24,64 +21,59 @@ def get_strike_range(data, spot, rows=10):
     filtered = [item for item in data if "CE" in item and "PE" in item]
     df = pd.DataFrame(filtered)
     df["strikePrice"] = df["strikePrice"].astype(float)
-    df = df.drop_duplicates(subset="strikePrice")  # Remove duplicates
+    df = df.drop_duplicates(subset="strikePrice")
     df["distance"] = abs(df["strikePrice"] - spot)
     df = df.sort_values(by="distance")
-    range_df = df.iloc[:rows*2+1].sort_values(by="strikePrice").reset_index(drop=True)
-    return range_df
+    return df.iloc[:rows*2+1].sort_values(by="strikePrice").reset_index(drop=True)
 
 # App UI
-st.title("🔍 NIFTY Option Chain OI Change Monitor")
+st.title("🔥 NIFTY Option Chain: Change in OI Monitor")
 refresh_rate = st.sidebar.selectbox("⏱ Refresh Interval", ["30 seconds", "1 minute"], index=1)
 refresh_interval = 30 if refresh_rate == "30 seconds" else 60
 
-auto_refresh = st.sidebar.checkbox("Enable Auto Refresh", value=True)
-if st.sidebar.button("🔄 Manual Refresh"):
+auto_refresh = st.sidebar.checkbox("🔁 Auto Refresh", value=True)
+manual_refresh = st.sidebar.button("🔄 Manual Refresh")
+
+if manual_refresh:
     st.cache_data.clear()
 
 data, spot = fetch_option_chain()
 
 if data:
-    st.write(f"**NIFTY Spot Price:** `{spot}`")
+    st.write(f"**💹 NIFTY Spot Price:** `{spot}`")
     df = get_strike_range(data, spot)
 
-    # Extract call and put change in OI
+    # Extract change in OI
     df["CE_change_OI"] = df["CE"].apply(lambda x: x.get("changeinOpenInterest", 0))
     df["PE_change_OI"] = df["PE"].apply(lambda x: x.get("changeinOpenInterest", 0))
     
-    # Add directional weight scale
+    # Weight label
     df["Weight"] = np.where(
         df["CE_change_OI"] > df["PE_change_OI"],
         "CALL Heavy",
         np.where(df["CE_change_OI"] < df["PE_change_OI"], "PUT Heavy", "Neutral")
     )
-    
-    # Highlight spot row
-    def highlight_spot(row):
-        return ['background-color: yellow' if row['strikePrice'] == spot else '' for _ in row]
 
-    # Calculate summary
-    call_sum = df["CE_change_OI"].sum()
-    put_sum = df["PE_change_OI"].sum()
-    net_oi = call_sum - put_sum
-    sentiment = "Bullish" if net_oi > 0 else "Bearish" if net_oi < 0 else "Neutral"
-    
-    # Add summary row
+    # Highlight spot price row
+    def highlight_spot(row):
+        if abs(row['strikePrice'] - spot) < 1:
+            return ['background-color: yellow' for _ in row]
+        return ['' for _ in row]
+
+    # Summary row
     summary_row = pd.DataFrame({
         "strikePrice": ["Total"],
-        "CE_change_OI": [call_sum],
-        "PE_change_OI": [put_sum],
-        "Weight": [sentiment],
-        "distance": [""]
+        "CE_change_OI": [df["CE_change_OI"].sum()],
+        "PE_change_OI": [df["PE_change_OI"].sum()],
+        "Weight": ["Bullish" if df["CE_change_OI"].sum() > df["PE_change_OI"].sum() else "Bearish" if df["CE_change_OI"].sum() < df["PE_change_OI"].sum() else "Neutral"]
     })
+
     display_df = pd.concat([df[["strikePrice", "CE_change_OI", "PE_change_OI", "Weight"]], summary_row], ignore_index=True)
-    
     styled_df = display_df.style.apply(highlight_spot, axis=1)
     st.dataframe(styled_df, use_container_width=True)
-
 else:
-    st.error("Unable to load option chain data.")
+    st.error("Unable to fetch option chain data.")
 
-# Auto-refresh logic
+# Auto-refresh behavior
 if auto_refresh:
     st.experimental_rerun()
