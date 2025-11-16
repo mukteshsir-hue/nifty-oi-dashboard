@@ -83,6 +83,9 @@ if data:
 else:
     st.error("Unable to fetch option chain data. Please try again.")
 
-# Auto-refresh logic
-if auto_refresh:
-    st.experimental_rerun()
+# Auto-refresh logic (safe)
+try:
+    if auto_refresh:
+        st.rerun()
+except Exception as rerun_error:
+    st.write("⚠️ Auto-refresh unavailable:", rerun_error)
