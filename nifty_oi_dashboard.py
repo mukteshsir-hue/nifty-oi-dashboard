@@ -1,12 +1,13 @@
 import streamlit as st
 import requests
 import pandas as pd
+import altair as alt
 
 st.set_page_config(page_title="Nifty OI Dashboard", layout="wide")
 
 # Title and Configuration
 st.title("📊 Nifty Option Chain Open Interest Dashboard")
-refresh_interval = st.sidebar.selectbox("Auto-refresh interval (seconds)", [30, 60, 90, 120,150], index=1)
+refresh_interval = st.sidebar.selectbox("Auto-refresh interval (seconds)", [30, 60], index=1)
 auto_refresh = st.sidebar.checkbox("Enable auto-refresh", value=True)
 
 if st.sidebar.button("Refresh Now"):
@@ -84,13 +85,33 @@ try:
     styled_df = df.style.apply(highlight_row, axis=1)
     st.dataframe(styled_df, use_container_width=True)
 
-    # Bar chart for change in OI
+    # Bar chart for change in OI with custom color and labels
     totals_df = pd.DataFrame({
         "Side": ["Calls", "Puts"],
         "Change in OI": [sum_row["call_change_oi"], sum_row["put_change_oi"]],
     })
-    st.subheader("📊 Total Change in OI Comparison")
-    st.bar_chart(totals_df.set_index("Side"))
+    totals_df['Color'] = ['green', 'red']
+
+    chart = alt.Chart(totals_df).mark_bar().encode(
+        x=alt.X('Side', title=""),
+        y=alt.Y('Change in OI', title="Total Change in Open Interest"),
+        color=alt.Color('Color', scale=None),
+        tooltip=['Side', 'Change in OI']
+    ).properties(
+        width=300,
+        height=400,
+        title="📊 Total Change in Call vs Put OI"
+    )
+
+    text = chart.mark_text(
+        align='center',
+        baseline='bottom',
+        dy=-5
+    ).encode(
+        text='Change in OI:Q'
+    )
+
+    st.altair_chart(chart + text, use_container_width=True)
 
 except Exception as e:
     st.error(f"Failed to retrieve or process data: {e}")
@@ -98,4 +119,3 @@ except Exception as e:
 # Auto-refresh logic
 if auto_refresh:
     st.rerun()
-
