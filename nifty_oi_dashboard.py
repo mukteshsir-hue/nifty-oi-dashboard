@@ -2,13 +2,6 @@ import streamlit as st
 import requests
 import pandas as pd
 
-# Optional Plotly import
-try:
-    import plotly.graph_objects as go
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-
 st.set_page_config(page_title="Nifty OI Dashboard", layout="wide")
 
 # Title and Configuration
@@ -91,20 +84,13 @@ try:
     styled_df = df.style.apply(highlight_row, axis=1)
     st.dataframe(styled_df, use_container_width=True)
 
-    # Graphical summary
-    if PLOTLY_AVAILABLE:
-        fig = go.Figure(data=[
-            go.Bar(name="Call Change in OI", x=["Calls"], y=[sum_row["call_change_oi"]]),
-            go.Bar(name="Put Change in OI", x=["Puts"], y=[sum_row["put_change_oi"]]),
-        ])
-        fig.update_layout(
-            title="📈 Total Change in OI Comparison",
-            xaxis_title="Side",
-            yaxis_title="Change in OI",
-        )
-        st.plotly_chart(fig)
-    else:
-        st.info("Plotly not installed. Graphical summary unavailable.")
+    # Bar chart for change in OI
+    totals_df = pd.DataFrame({
+        "Side": ["Calls", "Puts"],
+        "Change in OI": [sum_row["call_change_oi"], sum_row["put_change_oi"]],
+    })
+    st.subheader("📊 Total Change in OI Comparison")
+    st.bar_chart(totals_df.set_index("Side"))
 
 except Exception as e:
     st.error(f"Failed to retrieve or process data: {e}")
