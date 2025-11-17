@@ -1,106 +1,161 @@
 import streamlit as st
 import requests
 import pandas as pd
+import altair as alt
+import os
+from datetime import datetime
 
-st.set_page_config(page_title="Nifty OI Dashboard", layout="wide")
+# Constants
+NSE_OPTION_CHAIN_API = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
+DATA_FILE = "nifty_data.csv"
 
-# Title and Sidebar
-st.title("📊 Nifty Option Chain Open Interest Dashboard")
+# Page Configuration
+st.set_page_config(page_title="Nifty OI & LTP Dashboard", layout="wide")
+st.title("📊 Nifty Option Chain Dashboard")
 
+# Sidebar options
 refresh_interval = st.sidebar.selectbox("Auto-refresh interval (seconds)", [30, 60], index=1)
-auto_refresh = st.sidebar.checkbox("Enable auto-refresh", value=True)
+enable_auto_refresh = st.sidebar.checkbox("Enable auto-refresh", value=True)
+
 if st.sidebar.button("Refresh Now"):
     st.rerun()
 
-# NSE API URL
-NSE_OPTION_CHAIN_API = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
-
+# Function to fetch option chain data
 @st.cache_data(ttl=10)
 def fetch_option_chain():
     headers = {"User-Agent": "Mozilla/5.0"}
     response = requests.get(NSE_OPTION_CHAIN_API, headers=headers)
-    response.raise_for_status()
-    return response.json()
+    data = response.json()
+    return data
 
-# Fetch and prepare data
-try:
-    option_chain = fetch_option_chain()
-    records = option_chain["records"]["data"]
-    underlying_value = option_chain["records"]["underlyingValue"]
-    expiry_dates = option_chain["records"]["expiryDates"]
-    nearest_expiry = expiry_dates[0]
+# Main tabs
+tab1, tab2 = st.tabs(["📑 OI Summary", "📈 LTP & OI Trends"])
 
-    st.subheader(f"ℹ️ Spot Price: **{underlying_value}** | Expiry: **{nearest_expiry}**")
+# --- Tab 1: OI Summary ---
+with tab1:
+    try:
+        option_chain = fetch_option_chain()
+        records = option_chain["records"]["data"]
+        underlying_value = option_chain["records"]["underlyingValue"]
+        expiry_dates = option_chain["records"]["expiryDates"]
+        nearest_expiry = expiry_dates[0] if expiry_dates else None
+        
+        st.subheader(f"ℹ️ Nifty Spot Price: **{underlying_value}** | Expiry: **{nearest_expiry}**")
 
-    # Filter records for nearest expiry and build table data
-    filtered = [r for r in records if r.get("expiryDate") == nearest_expiry]
-    table_data = []
-    for row in filtered:
-        strike = row["strikePrice"]
-        ce = row.get("CE", {})
-        pe = row.get("PE", {})
+        # Filter nearest expiry
+        filtered_records = [item for item in records if item.get("expiryDate") == nearest_expiry]
 
-        table_data.append({
-            "strikePrice": strike,
-            "call_change_oi": ce.get("changeinOpenInterest", 0),
-            "call_ltp": ce.get("lastPrice", 0),
-            "put_change_oi": pe.get("changeinOpenInterest", 0),
-            "put_ltp": pe.get("lastPrice", 0),
-            "call_put_ltp_sum": ce.get("lastPrice", 0) + pe.get("lastPrice", 0),
-            "weight_diff": ce.get("changeinOpenInterest", 0) - pe.get("changeinOpenInterest", 0)
-        })
+        # Build table
+        rows = []
+        for item in filtered_records:
+            strike = item["strikePrice"]
+            call = item.get("CE", {})
+            put = item.get("PE", {})
+            call_oi = call.get("changeinOpenInterest", 0)
+            put_oi = put.get("changeinOpenInterest", 0)
+            call_ltp = call.get("lastPrice", 0)
+            put_ltp = put.get("lastPrice", 0)
+            total_ltp = call_ltp + put_ltp
 
-    df = pd.DataFrame(table_data).sort_values(by="strikePrice")
+            rows.append({
+                "Strike Price": strike,
+                "Call Change in OI": call_oi,
+                "Put Change in OI": put_oi,
+                "Call LTP": call_ltp,
+                "Put LTP": put_ltp,
+                "Total LTP": total_ltp,
+                "Net OI": call_oi - put_oi,
+            })
 
-    # Limit to 10 strikes above and below spot
-    df = df[
-        (df["strikePrice"] >= underlying_value - 500) &
-        (df["strikePrice"] <= underlying_value + 500)
-    ]
+        df = pd.DataFrame(rows)
+        df = df.sort_values(by="Strike Price")
 
-    # Add summation row
-    sum_row = {
-        "strikePrice": "TOTAL",
-        "call_change_oi": df["call_change_oi"].sum(),
-        "call_ltp": "",
-        "put_change_oi": df["put_change_oi"].sum(),
-        "put_ltp": "",
-        "call_put_ltp_sum": "",
-        "weight_diff": df["weight_diff"].sum()
-    }
-    df = df.append(sum_row, ignore_index=True)
+        # Highlight nearest strike price
+        nearest_strike = df.iloc[(df["Strike Price"] - underlying_value).abs().argsort()[:1]]["Strike Price"].values[0]
 
-    # Highlight current strike and total row
-    def highlight_rows(row):
-        if row["strikePrice"] == underlying_value:
-            return ["background-color: yellow"] * len(row)
-        if row["strikePrice"] == "TOTAL":
-            return ["font-weight: bold;background-color: #e8e8e8"] * len(row)
-        return [""] * len(row)
+        def highlight_row(row):
+            return ['background-color: yellow' if row['Strike Price'] == nearest_strike else '' for _ in row]
 
-    # Tabbed layout
-    tab1, tab2 = st.tabs(["📋 Strike Summary", "📈 Weight Change Graph"])
-
-    with tab1:
         st.dataframe(
-            df.style.apply(highlight_rows, axis=1),
-            height=500,
-            use_container_width=True
+            df.style.apply(highlight_row, axis=1),
+            use_container_width=True, height=600
         )
 
-    with tab2:
-        chart_df = pd.DataFrame({
+        # Summary
+        total_call_oi = df["Call Change in OI"].sum()
+        total_put_oi = df["Put Change in OI"].sum()
+
+        st.subheader("📊 OI Summary Chart")
+        summary_df = pd.DataFrame({
             "Side": ["Calls", "Puts"],
-            "Change in OI": [
-                sum_row["call_change_oi"],
-                sum_row["put_change_oi"],
-            ]
+            "Change in OI": [total_call_oi, total_put_oi]
         })
-        st.bar_chart(chart_df.set_index("Side"))
 
-except Exception as e:
-    st.error(f"Error: {e}")
+        bar_chart = alt.Chart(summary_df).mark_bar().encode(
+            x="Side",
+            y="Change in OI",
+            color=alt.condition(
+                alt.datum.Side == "Calls", 
+                alt.value("green"), 
+                alt.value("red")
+            ),
+            tooltip=["Side", "Change in OI"]
+        ).properties(
+            width=400,
+            height=300,
+            title="Total Change in Open Interest"
+        )
+        st.altair_chart(bar_chart, use_container_width=True)
 
-# Auto-refresh logic
-if auto_refresh:
-    st.rerun()
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
+
+# --- Tab 2: LTP & OI Trends ---
+with tab2:
+    st.subheader("📈 Historical Trends: LTP and Change in OI")
+
+    if os.path.exists(DATA_FILE):
+        try:
+            hist_data = pd.read_csv(DATA_FILE)
+            hist_data['timestamp'] = pd.to_datetime(hist_data['timestamp'])
+            
+            # User selects strike price
+            strike_options = sorted(hist_data['strikePrice'].unique())
+            selected_strike = st.selectbox("Select Strike Price", strike_options)
+
+            filtered_data = hist_data[hist_data['strikePrice'] == selected_strike]
+
+            if not filtered_data.empty:
+                c1, c2 = st.columns(2)
+
+                # LTP trend
+                with c1:
+                    st.markdown(f"### 📉 LTP Trend for {selected_strike}")
+                    ltp_chart = alt.Chart(filtered_data).mark_line().encode(
+                        x="timestamp:T",
+                        y=alt.Y("value:Q", title="Last Traded Price"),
+                        color="type:N"
+                    ).properties(width=500, height=250)
+                    st.altair_chart(ltp_chart, use_container_width=True)
+
+                # OI trend
+                with c2:
+                    st.markdown(f"### 📉 Change in OI Trend for {selected_strike}")
+                    oi_chart = alt.Chart(filtered_data).mark_line().encode(
+                        x="timestamp:T",
+                        y=alt.Y("changeoi:Q", title="Change in Open Interest"),
+                        color="type:N"
+                    ).properties(width=500, height=250)
+                    st.altair_chart(oi_chart, use_container_width=True)
+
+            else:
+                st.warning("No historical data available for this strike price.")
+
+        except Exception as e:
+            st.error(f"Error loading historical data: {e}")
+    else:
+        st.info("No historical data file found. Please run the data collector script.")
+
+# Auto-refresh page if enabled
+if enable_auto_refresh:
+    st.experimental_rerun()
