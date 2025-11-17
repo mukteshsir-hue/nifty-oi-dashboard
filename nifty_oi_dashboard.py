@@ -6,7 +6,7 @@ st.set_page_config(page_title="Nifty OI Dashboard", layout="wide")
 
 # Title and Configuration
 st.title("📊 Nifty Option Chain Open Interest Dashboard")
-refresh_interval = st.sidebar.selectbox("Auto-refresh interval (seconds)", [30, 60], index=1)
+refresh_interval = st.sidebar.selectbox("Auto-refresh interval (seconds)", [30, 60, 90, 120,150], index=1)
 auto_refresh = st.sidebar.checkbox("Enable auto-refresh", value=True)
 
 if st.sidebar.button("Refresh Now"):
@@ -98,3 +98,4 @@ except Exception as e:
 # Auto-refresh logic
 if auto_refresh:
     st.rerun()
+
