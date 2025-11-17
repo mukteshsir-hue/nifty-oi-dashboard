@@ -55,7 +55,7 @@ try:
             "call_ltp": call.get("lastPrice", 0),
             "put_change_oi": put.get("changeinOpenInterest", 0),
             "put_ltp": put.get("lastPrice", 0),
-            "total_ltp": call.get("lastPrice", 0) + put.get("lastPrice", 0),
+            "call_put_ltp_sum": call.get("lastPrice", 0) + put.get("lastPrice", 0),
             "weight_diff": call.get("changeinOpenInterest", 0) - put.get("changeinOpenInterest", 0),
         }
 
@@ -64,6 +64,9 @@ try:
     df = df.sort_values(by="strikePrice")
     df = df[(df["strikePrice"] >= underlying_value - 500) & (df["strikePrice"] <= underlying_value + 500)]
 
+    # Find the nearest strike price to the underlying value
+    nearest_strike = df.iloc[(df["strikePrice"] - underlying_value).abs().argmin()]["strikePrice"]
+
     # Summation row
     sum_row = {
         "strikePrice": "SUM TOTAL",
@@ -71,14 +74,14 @@ try:
         "call_ltp": "",
         "put_change_oi": df["put_change_oi"].sum(),
         "put_ltp": "",
-        "total_ltp": "",
+        "call_put_ltp_sum": "",
         "weight_diff": df["weight_diff"].sum(),
     }
     df = df._append(sum_row, ignore_index=True)
 
     # Styling
     def highlight_row(row):
-        if row["strikePrice"] == underlying_value:
+        if row["strikePrice"] == nearest_strike:
             return ["background-color: yellow"] * len(row)
         elif row["strikePrice"] == "SUM TOTAL":
             return ["font-weight: bold"] * len(row)
