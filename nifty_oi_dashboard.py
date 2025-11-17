@@ -55,6 +55,7 @@ try:
             "call_ltp": call.get("lastPrice", 0),
             "put_change_oi": put.get("changeinOpenInterest", 0),
             "put_ltp": put.get("lastPrice", 0),
+            "total_ltp": call.get("lastPrice", 0) + put.get("lastPrice", 0),
             "weight_diff": call.get("changeinOpenInterest", 0) - put.get("changeinOpenInterest", 0),
         }
 
@@ -70,6 +71,7 @@ try:
         "call_ltp": "",
         "put_change_oi": df["put_change_oi"].sum(),
         "put_ltp": "",
+        "total_ltp": "",
         "weight_diff": df["weight_diff"].sum(),
     }
     df = df._append(sum_row, ignore_index=True)
